@@ -1023,13 +1023,24 @@ form-title">إضافة سؤال جديد يدوياً</h4>
             const btnBulkText = document.getElementById('btn-bulk-text'); if(btnBulkText) { btnBulkText.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnBulkText.disabled = true; }
             const btnBulkJson = document.getElementById('btn-bulk-json'); if(btnBulkJson) { btnBulkJson.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnBulkJson.disabled = true; }
 
-            DB.config.bannerUrl = NEW_BANNER_URL; localStorage.setItem('prim4b_full_master_db_v1', JSON.stringify(DB));
             try {
+                DB.config.bannerUrl = NEW_BANNER_URL;
+                
+                // محاولة الحفظ المحلي بأمان بدون تعطيل الحفظ السحابي لو الذاكرة ممتلئة
+                try {
+                    localStorage.setItem('prim4b_full_master_db_v1', JSON.stringify(DB));
+                } catch (storageErr) {
+                    console.warn('ذاكرة المتصفح ممتلئة، جاري الاعتماد على السحابة فقط');
+                    try { localStorage.removeItem('prim4b_full_master_db_v1'); } catch(e) {}
+                }
+
                 let payload = { ...DB, testId: DEFAULT_CONFIG.testId };
                 let res = await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload), headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
-                let jsonRes = await res.json(); if (jsonRes.status === 'success') showToast('تم الحفظ في السحابة بنجاح ☁️', 'fa-cloud-arrow-up');
-            } catch(e) { showToast('خطأ في الاتصال بالشبكة!', 'fa-triangle-exclamation', true); }
-            finally {
+                let jsonRes = await res.json();
+                if (jsonRes.status === 'success') showToast('تم الحفظ في السحابة بنجاح ☁️', 'fa-cloud-arrow-up');
+            } catch(e) {
+                showToast('خطأ في الاتصال بالشبكة!', 'fa-triangle-exclamation', true);
+            } finally {
                 isSaving = false;
                 if(btnSettings) { btnSettings.innerHTML = '<i class="fa-solid fa-cloud-arrow-up ml-2"></i> حفظ الإعدادات والمصفوفة'; btnSettings.disabled = false; }
                 if(btnQuestion) { btnQuestion.innerHTML = '<i class="fa-solid fa-plus ml-1"></i> حفظ السؤال'; btnQuestion.disabled = false; }
@@ -1037,7 +1048,6 @@ form-title">إضافة سؤال جديد يدوياً</h4>
                 if(btnBulkJson) { btnBulkJson.innerHTML = '<i class="fa-solid fa-code"></i> استيراد كملف JSON ذكي'; btnBulkJson.disabled = false; }
             }
         }
-
         function showToast(msg, icon = 'fa-circle-info', isError = false) {
             const toast = document.getElementById('toast'); document.getElementById('toast-msg').innerText = msg;
             document.getElementById('toast-icon').className = `fa-solid ${icon} ${isError ? 'text-red-400' : 'text-indigo-400'}`;
