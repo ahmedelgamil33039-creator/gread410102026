@@ -994,27 +994,63 @@ form-title">إضافة سؤال جديد يدوياً</h4>
         async function adminDeleteUnit(u) { if (confirm(`هل أنت متأكد من حذف الوحدة: ${u}؟ سيتم حذف جميع دروسها.`)) { DB.config.units = DB.config.units.filter(x => x !== u); delete DB.config.lessons[u]; await saveDatabase(); populateAllDropdowns(); showToast('تم حذف الوحدة', 'fa-trash'); } }
         async function adminDeleteLesson(u, l) { if (confirm(`هل أنت متأكد من حذف الدرس: ${l}؟`)) { DB.config.lessons[u] = DB.config.lessons[u].filter(x => x !== l); await saveDatabase(); populateAllDropdowns(); showToast('تم حذف الدرس', 'fa-trash'); } }
 
+        let isCloudLoaded = false; // قفل الأمان: بيمنع الحفظ قبل سحب البيانات من السحابة
+
         async function fetchCloudData() {
             const noCacheUrl = `${GOOGLE_SCRIPT_URL}?testId=${DEFAULT_CONFIG.testId}&t=${new Date().getTime()}`;
             try {
                 const response = await fetch(noCacheUrl);
-                if (response.ok) {
-                    const text = await response.text();
-                    if (text && text.trim().length > 5) {
-                        const data = JSON.parse(text);
-                        if (data && (data.students || data.questions || data.results)) {
-                            DB.config = { ...DEFAULT_CONFIG, ...(data.config || {}) }; DB.config.bannerUrl = NEW_BANNER_URL;
-                            DB.students = data.students || []; DB.questions = data.questions || []; DB.results = data.results || []; DB.essaySubmissions = data.essaySubmissions || [];
+                if (!response.ok) throw new Error('فشل الاتصال بالسحابة');
+                
+                const text = await response.text();
+                const trimmed = text ? text.trim() : '';
+                
+                if (trimmed.length > 5) {
+                    const data = JSON.parse(trimmed);
+                    if (data && (data.students || data.questions || data.results)) {
+                        DB.config = { ...DEFAULT_CONFIG, ...(data.config || {}) };
+                        DB.config.bannerUrl = NEW_BANNER_URL;
+                        DB.students = data.students || [];
+                        DB.questions = data.questions || [];
+                        DB.results = data.results || [];
+                        DB.essaySubmissions = data.essaySubmissions || [];
+                        
+                        isCloudLoaded = true; // اتأكدنا إن البيانات وصلت، نفتح قفل الحفظ
+
+                        // حماية التخزين المحلي عشان لو الذاكرة ممتلئة ميكسرش التحميل
+                        try {
                             localStorage.setItem('prim4b_full_master_db_v1', JSON.stringify(DB));
+                        } catch (storageErr) {
+                            console.warn('ذاكرة المتصفح ممتلئة أثناء التحميل، تم الاعتماد على السحابة.');
+                            try { localStorage.removeItem('prim4b_full_master_db_v1'); } catch(err) {}
                         }
                     }
+                } else if (trimmed === '{}' || trimmed === '') {
+                    // حالة منصة جديدة لسه فاضية والاتصال بالسيرفر سليم
+                    isCloudLoaded = true;
                 }
-            } catch(e) { const localData = localStorage.getItem('prim4b_full_master_db_v1'); if (localData) { try { DB = JSON.parse(localData); } catch(err) {} } }
-            initCurriculumStructure(); initApp(); checkActiveResumeSession();
+            } catch(e) {
+                isCloudLoaded = false; // نقفل الحفظ تماماً لحماية بيانات السحابة
+                const localData = localStorage.getItem('prim4b_full_master_db_v1');
+                if (localData) {
+                    try { DB = JSON.parse(localData); } catch(err) {}
+                }
+            }
+            
+            initCurriculumStructure();
+            initApp();
+            checkActiveResumeSession();
+            
+            if (!isCloudLoaded) {
+                showToast('تعذر الاتصال بالسحابة: الحفظ مقفول مؤقتاً لحماية بياناتك، أعد تحميل الصفحة', 'fa-shield-halved', true);
+            }
         }
-
         let isSaving = false;
         async function saveDatabase() {
+            if (!isCloudLoaded) {
+                showToast('تم إيقاف الحفظ لحماية بياناتك! أعد تحميل الصفحة للتأكد من الاتصال بالسحابة أولاً.', 'fa-shield-halved', true);
+                return;
+            }
             if (isSaving) return;
             isSaving = true;
             
