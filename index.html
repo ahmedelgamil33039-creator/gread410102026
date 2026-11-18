@@ -484,8 +484,7 @@
                     </div>
 
                     <div class="bg-slate-900/80 p-5 rounded-3xl border border-indigo-500/30 space-y-4 shadow-lg">
-                        <h4 class="font-bold text-base text-indigo-300 border-b border-indigo-500/20 pb-2" id="q-
-form-title">إضافة سؤال جديد يدوياً</h4>
+                        <h4 class="font-bold text-base text-indigo-300 border-b border-indigo-500/20 pb-2" id="q-form-title">إضافة سؤال جديد يدوياً</h4>
                         <input type="hidden" id="admin-q-id">
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
@@ -994,17 +993,22 @@ form-title">إضافة سؤال جديد يدوياً</h4>
         async function adminDeleteUnit(u) { if (confirm(`هل أنت متأكد من حذف الوحدة: ${u}؟ سيتم حذف جميع دروسها.`)) { DB.config.units = DB.config.units.filter(x => x !== u); delete DB.config.lessons[u]; await saveDatabase(); populateAllDropdowns(); showToast('تم حذف الوحدة', 'fa-trash'); } }
         async function adminDeleteLesson(u, l) { if (confirm(`هل أنت متأكد من حذف الدرس: ${l}؟`)) { DB.config.lessons[u] = DB.config.lessons[u].filter(x => x !== l); await saveDatabase(); populateAllDropdowns(); showToast('تم حذف الدرس', 'fa-trash'); } }
 
+        // مفاتيح تخزين أوتوماتيك بتتغير تلقائياً حسب كل صف
+        function getAutoDbKey() { return 'master_db_' + DEFAULT_CONFIG.testId; }
+        function getAutoAttemptKey() { return 'active_attempt_' + DEFAULT_CONFIG.testId; }
+
         let isCloudLoaded = false; // قفل الأمان: بيمنع الحفظ قبل سحب البيانات من السحابة
 
         async function fetchCloudData() {
+            const dbKey = getAutoDbKey();
             const noCacheUrl = `${GOOGLE_SCRIPT_URL}?testId=${DEFAULT_CONFIG.testId}&t=${new Date().getTime()}`;
             try {
                 const response = await fetch(noCacheUrl);
                 if (!response.ok) throw new Error('فشل الاتصال بالسحابة');
-                
+
                 const text = await response.text();
                 const trimmed = text ? text.trim() : '';
-                
+
                 if (trimmed.length > 5) {
                     const data = JSON.parse(trimmed);
                     if (data && (data.students || data.questions || data.results)) {
@@ -1014,37 +1018,36 @@ form-title">إضافة سؤال جديد يدوياً</h4>
                         DB.questions = data.questions || [];
                         DB.results = data.results || [];
                         DB.essaySubmissions = data.essaySubmissions || [];
-                        
-                        isCloudLoaded = true; // اتأكدنا إن البيانات وصلت، نفتح قفل الحفظ
 
-                        // حماية التخزين المحلي عشان لو الذاكرة ممتلئة ميكسرش التحميل
+                        isCloudLoaded = true;
+
                         try {
-                            localStorage.setItem('prim4b_full_master_db_v1', JSON.stringify(DB));
+                            localStorage.setItem(dbKey, JSON.stringify(DB));
                         } catch (storageErr) {
                             console.warn('ذاكرة المتصفح ممتلئة أثناء التحميل، تم الاعتماد على السحابة.');
-                            try { localStorage.removeItem('prim4b_full_master_db_v1'); } catch(err) {}
+                            try { localStorage.removeItem(dbKey); } catch(err) {}
                         }
                     }
                 } else if (trimmed === '{}' || trimmed === '') {
-                    // حالة منصة جديدة لسه فاضية والاتصال بالسيرفر سليم
                     isCloudLoaded = true;
                 }
             } catch(e) {
-                isCloudLoaded = false; // نقفل الحفظ تماماً لحماية بيانات السحابة
-                const localData = localStorage.getItem('prim4b_full_master_db_v1');
+                isCloudLoaded = false;
+                const localData = localStorage.getItem(dbKey);
                 if (localData) {
                     try { DB = JSON.parse(localData); } catch(err) {}
                 }
             }
-            
+
             initCurriculumStructure();
             initApp();
             checkActiveResumeSession();
-            
+
             if (!isCloudLoaded) {
                 showToast('تعذر الاتصال بالسحابة: الحفظ مقفول مؤقتاً لحماية بياناتك، أعد تحميل الصفحة', 'fa-shield-halved', true);
             }
         }
+
         let isSaving = false;
         async function saveDatabase() {
             if (!isCloudLoaded) {
@@ -1053,21 +1056,21 @@ form-title">إضافة سؤال جديد يدوياً</h4>
             }
             if (isSaving) return;
             isSaving = true;
-            
+
             const btnSettings = document.getElementById('btn-save-settings'); if(btnSettings) { btnSettings.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnSettings.disabled = true; }
             const btnQuestion = document.getElementById('btn-save-question'); if(btnQuestion) { btnQuestion.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnQuestion.disabled = true; }
             const btnBulkText = document.getElementById('btn-bulk-text'); if(btnBulkText) { btnBulkText.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnBulkText.disabled = true; }
             const btnBulkJson = document.getElementById('btn-bulk-json'); if(btnBulkJson) { btnBulkJson.innerHTML = '<i class="fa-solid fa-spinner fa-spin ml-2"></i> جاري الحفظ...'; btnBulkJson.disabled = true; }
 
             try {
+                const dbKey = getAutoDbKey();
                 DB.config.bannerUrl = NEW_BANNER_URL;
-                
-                // محاولة الحفظ المحلي بأمان بدون تعطيل الحفظ السحابي لو الذاكرة ممتلئة
+
                 try {
-                    localStorage.setItem('prim4b_full_master_db_v1', JSON.stringify(DB));
+                    localStorage.setItem(dbKey, JSON.stringify(DB));
                 } catch (storageErr) {
                     console.warn('ذاكرة المتصفح ممتلئة، جاري الاعتماد على السحابة فقط');
-                    try { localStorage.removeItem('prim4b_full_master_db_v1'); } catch(e) {}
+                    try { localStorage.removeItem(dbKey); } catch(e) {}
                 }
 
                 let payload = { ...DB, testId: DEFAULT_CONFIG.testId };
@@ -1133,7 +1136,7 @@ form-title">إضافة سؤال جديد يدوياً</h4>
         window.addEventListener('beforeunload', function (e) { if (activeAttempt && !activeAttempt.isCompleted && !isPreviewMode) { e.preventDefault(); e.returnValue = 'أنت في منتصف الاختبار، الرجاء عدم مغادرة الصفحة!'; } });
 
         function checkActiveResumeSession() {
-            const savedAttempt = localStorage.getItem('prim4b_active_attempt_v1');
+            const savedAttempt = localStorage.getItem(getAutoAttemptKey());
             if (savedAttempt) {
                 try {
                     const parsed = JSON.parse(savedAttempt);
@@ -1147,8 +1150,14 @@ form-title">إضافة سؤال جديد يدوياً</h4>
             }
         }
 
-        function saveActiveAttemptState() { if (!isPreviewMode && activeAttempt && !activeAttempt.isCompleted) { localStorage.setItem('prim4b_active_attempt_v1', JSON.stringify(activeAttempt)); } }
-        function clearActiveAttemptState() { localStorage.removeItem('prim4b_active_attempt_v1'); }
+        function saveActiveAttemptState() {
+            if (!isPreviewMode && activeAttempt && !activeAttempt.isCompleted) {
+                try { localStorage.setItem(getAutoAttemptKey(), JSON.stringify(activeAttempt)); } catch(e) {}
+            }
+        }
+        function clearActiveAttemptState() {
+            try { localStorage.removeItem(getAutoAttemptKey()); } catch(e) {}
+        }
 
         function handleStartClick() {
             const studentId = document.getElementById('select-student').value;
@@ -1598,7 +1607,18 @@ DB.config.honor3 = document.getElementById('admin-h3').value.trim();
             if (qId) { const targetQ = DB.questions.find(q => q.id === qId); if (targetQ) { targetQ.unit = unit; targetQ.lesson = lesson; targetQ.type = type; targetQ.text = text; targetQ.options = options; targetQ.correct = correct; targetQ.correctText = correctTextVal; targetQ.points = points; targetQ.image = image; targetQ.explanation = explanation; targetQ.difficulty = difficulty; } } 
             else { DB.questions.push({ id: 'q_manual_' + Date.now() + Math.random().toString(36).substr(2, 5), unit, lesson, type, difficulty, text, options, correct, correctText: correctTextVal, points, image, explanation, archived: false }); }
 
-            clearActiveAttemptState(); await saveDatabase(); resetQuestionForm(); updateSelectElement('filter-q-unit', unit); updateFilterLesson(); updateSelectElement('filter-q-lesson', lesson); renderAdminQuestions(); updateSmartCounters(); showToast('تم حفظ السؤال بنجاح.', 'fa-cloud-arrow-up');
+            clearActiveAttemptState(); await saveDatabase(); resetQuestionForm(); document.getElementById('filter-q-unit').value = unit; updateFilterLesson(); document.getElementById('filter-q-lesson').value = lesson; renderAdminQuestions(); updateSmartCounters(); showToast('تم حفظ السؤال بنجاح.', 'fa-cloud-arrow-up');
+        }
+
+        function resetQuestionForm() {
+            document.getElementById('q-form-title').innerText = 'إضافة سؤال جديد يدوياً';
+            document.getElementById('admin-q-id').value = '';
+            document.getElementById('admin-q-text').value = '';
+            document.getElementById('admin-q-image').value = '';
+            document.getElementById('admin-q-explanation').value = '';
+            document.getElementById('admin-q-points').value = 1;
+            ['0','1','2','3'].forEach(i => { const el = document.getElementById('admin-q-opt-' + i); if(el) el.value = ''; });
+            document.getElementById('admin-q-correct').value = 0;
         }
 
         function editQuestion(id) {
@@ -1688,7 +1708,7 @@ DB.config.honor3 = document.getElementById('admin-h3').value.trim();
                     currentQ = null;
                     if (l.includes('مقالي')) currentSectionType = 'essay';
                     else if (l.includes('لغز') || l.includes('استنتاج')) currentSectionType = 'puzzle';
-                    else if (l.includes('صوب') || l.includes('صوّب')) currentSectionType = 'correct_error';
+                    else if (l.includes('صوب') || l.includes('صوّب') || l.includes('تحته خط')) currentSectionType = 'correct_error';
                     else if (l.includes('صح') || l.includes('خطأ')) currentSectionType = 'true_false';
                     else if (l.includes('أكمل') || l.includes('اكمل')) currentSectionType = 'complete';
                     else if (l.includes('خريطة')) currentSectionType = 'map';
@@ -1912,7 +1932,7 @@ DB.config.honor3 = document.getElementById('admin-h3').value.trim();
             if (confirm('هل أنت متأكد من مسح تسليم هذا الطالب وإلغاء حجبه تماماً لتمكينه من الإعادة؟')) {
                 DB.results = DB.results.filter(r => r.studentId !== studentId);
                 if (DB.essaySubmissions) DB.essaySubmissions = DB.essaySubmissions.filter(s => s.studentId !== studentId);
-                await saveDatabase(); localStorage.removeItem('prim4b_active_attempt_v1'); localStorage.removeItem('prim4b_full_master_db_v1'); await fetchCloudData();
+                await saveDatabase(); try { localStorage.removeItem(getAutoAttemptKey()); localStorage.removeItem(getAutoDbKey()); } catch(e) {} await fetchCloudData();
                 renderAdminBanned(); renderAdminResults(); initApp(); showToast('تم مسح تسليم الطالب بنجاح وإتاحة الإعادة.', 'fa-circle-check');
             }
         }
